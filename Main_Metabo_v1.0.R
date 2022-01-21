@@ -1,5 +1,4 @@
-
-rm(list = ls())
+#rm(list = ls())
 
 library(MetaboAnalystR)
 library(ropls)
@@ -8,29 +7,28 @@ library(dplyr)
 library(plyr)
 library(openxlsx)
 
-outdir <- "D:/R_space/Work_space/pipeline-5"
+outdir <- "D:/R_space/Work_space/pipeline-6"
 subdir <- c("1.Information","2.QualityControl","3.Statistics","4.SignificanceAnalysis","5.PathwayAnalysis")
 
 for (i in 1:length(subdir)){
-  dir.create(file.path(outdir, subdir[i]))
+  if (file.exists(file.path(outdir,subdir[i]))){
+    setwd(outdir)
+  } else {
+    dir.create(file.path(outdir, subdir[i]))
+    setwd(outdir)
+  }
 }
-setwd(outdir)
+
 infile <- "1.Information/neg-raw-metaboAnalystInput-2.csv"
 sample_infor <- read.xlsx(paste(outdir,"1.Information/Sample_Information.xlsx",sep = "/"),sheet = 1)
 
-# if (file.exists(subdir)){
-#   setwd(file.path(outdir, subdir))
-# } else {
-#   dir.create(file.path(outdir, subdir))
-#   setwd(file.path(outdir, subdir))
-# }
 
 rawdata <- read.csv(infile,header = T,sep = ",",quote = " ",stringsAsFactors = F)
 head(rawdata)
 rawdata2 <- as.data.frame(lapply(rawdata[-1,-1],as.numeric))
 rownames(rawdata2) <- rawdata[-1,1]
 # Obtain QC sample data matrix
-qcdata <- rawdata2[,grepl("QC|qc",colnames(rawdata2))] 
+qcdata <- rawdata2[,grepl("QC|qc|qC|Qc",colnames(rawdata2))] 
 # Calculate RSDs and data filtering
 qcmean <- apply(qcdata, 1, mean)
 qcsd <- apply(qcdata, 1, sd)
@@ -52,7 +50,7 @@ mSet<-SanityCheckData(mSet)
 mSet<-RemoveMissingPercent(mSet, percent=0.5)
 mSet<-ImputeMissingVar(mSet, method="min")
 mSet<-SanityCheckData(mSet)
-mSet<-FilterVariable(mSet, "iqr", "F", 25)  #### 
+mSet<-FilterVariable(mSet, "iqr", "F", 25)  # 25 ?
 mSet<-PreparePrenormData(mSet)
 mSet<-Normalization(mSet, "NULL", "NULL", "AutoNorm", ratio=FALSE, ratioNum=20)
 mSet<-SaveTransformedData(mSet)
@@ -66,25 +64,25 @@ nor_data<-data.frame(nor_data,stringsAsFactors = F)
 colnames(nor_data) <- nor_data[1,]
 nor_data <- nor_data[-1,-1]
 ####
-nor_data1 <- as.data.frame(lapply(nor_data,as.numeric)) # 数据转换成数值形式
+nor_data1 <- as.data.frame(lapply(nor_data,as.numeric)) # convert to numeric
 rownames(nor_data1) <- rownames(nor_data)
 colnames(nor_data1) <- colnames(nor_data)
 write.table(nor_data1,"data_nor_clean.csv",sep=",", row.names = F,col.names = T)
-########################################################### 
+#===================================================
 # QC PCA analysis(ropls)
-########################################################### 
+#===================================================
 nor.pca <- opls(x = nor_data1,predI=4)
-names(attributes(nor.pca))    #查看包含信息
-head(nor.pca@scoreMN)    #例如，提取对象得分（各样本在 PCA 轴中的排序坐标）
+names(attributes(nor.pca))    
+head(nor.pca@scoreMN)    
 pca.scoreMN <- as.data.frame(nor.pca@scoreMN)
 pca.scoreMN$Sample <- rownames(pca.scoreMN)
 # Data of PCA plot
 pca.scoreMN <- merge(pca.scoreMN, sample_infor[,3:4],by.x = "Sample",by.y = "Sample.analysis.name")
 head(pca.scoreMN)
-write.csv(pca.scoreMN,"pca_plot_data.csv",row.names = F)
-########################################################### 
+write.csv(pca.scoreMN,"2.QualityControl/QC_pca_plotdata.csv",row.names = F)
+#=====================================================
 # ggplot2 QC PCA analysis
-########################################################### 
+#===================================================== 
 xlab <- paste0( "PC1(",round(nor.pca@modelDF$R2X[1]* 100, 2), "%)")
 ylab <- paste0( "PC2(",round(nor.pca@modelDF$R2X[2]* 100, 2), "%)")
 p1 <- ggplot(data = pca.scoreMN,aes(x=p1,y=p2,color = Group ))+
@@ -99,16 +97,16 @@ p1 <- ggplot(data = pca.scoreMN,aes(x=p1,y=p2,color = Group ))+
   theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   ggtitle("QC-PCA")+
-  theme(plot.title = element_text(hjust = 0.5,face = "bold")) #设置标题居中
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) # title centered
 
 p1
 
 ggsave(p1,filename = "2.QualityControl/QC-PCA.pdf",width = 12,height = 9,dpi = 300)
 ggsave(p1,filename = "2.QualityControl/QC-PCA.png",width = 12,height = 9,dpi = 300)
 
-##########################################################
+#======================================================
 # QC heatmap
-##########################################################
+#======================================================
 library(pheatmap)
 library(reshape2)
 
@@ -117,6 +115,7 @@ rownames(sample_infor) <- sample_infor$Sample.analysis.name
 Group <-data.frame(class= sample_infor[,4])
 rownames(Group) <- rownames(sample_infor)
 df_heat <- as.data.frame(lapply(data_heat,as.numeric))
+write.csv(df_heat,"2.QualityControl/QC_heatmap_plotdata.csv",row.names = F)
 
 p2 <- pheatmap(df_heat,scale = "row", cluster_cols = T,show_rownames = F,cluster_rows = T,annotation_col = Group,legend_labels = NA,
               show_colnames=T,col=colorRampPalette(c("navy", "white", "firebrick3"))(50),treeheight_row = 30, treeheight_col = 30)
@@ -125,13 +124,13 @@ ggsave(p2,filename = "2.QualityControl/QC-heatmap.pdf",width = 12,height = 9,dpi
 ggsave(p2,filename = "2.QualityControl/QC-heatmap.png",width = 12,height = 9,dpi = 300)
 
 # QC boxplot
-##########################################################
+#===============================================
 library(tidyr)
 
 databox <- log10(df_heat)
 databox2 <- gather(databox,key = "Sample",value = "value")
 databox2 <- merge(databox2,sample_infor[,3:4],by.x ="Sample",by.y = "Sample.analysis.name",all.x = T)
-
+write.csv(databox2,"2.QualityControl/QC_boxplot_data.csv",row.names = F)
 b <- ggplot(databox2,aes(factor(Sample),value, fill=Group)) + geom_boxplot()+ 
   theme(axis.text = element_text(size=7,angle = 90), axis.title = element_text(size=12)) +
   labs(color="Group", x="Sample",y="log10(intensity)")
@@ -139,18 +138,16 @@ b
 ggsave(b,filename = "2.QualityControl/QC-IntensityBoxplot.pdf",width = 12,height = 9,dpi = 300)
 ggsave(b,filename = "2.QualityControl/QC-IntensityBoxplot.png",width = 12,height = 9,dpi = 300)
 
-################# QualityControl END ####################
+#================= QualityControl END ===========
 
-################ Statistics Start #######################
-
+#===============================================
+# Statistic analysis
+#===============================================
 mSet<-PlotNormSummary(mSet, "3.Statistics/norm_0_", "png", 300, width=NA)
 mSet<-PlotSampleNormSummary(mSet, "3.Statistics/snorm_0_", "png", 300, width=NA)
-mSet<-SaveTransformedData(mSet)  ## Save processed data
+mSet<-SaveTransformedData(mSet)  # Save processed data
 
-#################################################################
-#Step 1:Statistic analysis
-#################################################################
-mSet<-FC.Anal(mSet, 2.0, 1, FALSE) # 1 或者 0调整比较组的前后顺序
+mSet<-FC.Anal(mSet, 2.0, 1, FALSE) # 1 or 0:Comparison group order
 mSet<-PlotFC(mSet, "3.Statistics/fc_2_", "png", 300, width=NA)
 mSet<-Ttests.Anal(mSet, F, 0.05, FALSE, TRUE, "raw", FALSE)
 mSet<-PlotTT(mSet, "3.Statistics/tt_raw_", "png", 300, width=NA)
@@ -162,35 +159,33 @@ Fc_tt <- as.data.frame(cbind(mSet$analSet$tt$p.value,mSet$analSet$fc$fc.all))
 colnames(Fc_tt) <- c("P.value","FC")
 Fc_tt$`Compound ID` <- rownames(Fc_tt)
 
-cut_off_pvalue = 0.05
-cut_off_FC = 2
+cut_off_pvalue = 0.05 # ???
+cut_off_FC = 2        #???
 Fc_tt$Change[(Fc_tt$P.value > cut_off_pvalue)|(1/cut_off_FC <= Fc_tt$FC)& Fc_tt$FC <= cut_off_FC] <- "None"
 Fc_tt$Change[(Fc_tt$P.value < cut_off_pvalue)&(cut_off_FC < Fc_tt$FC)] <- "Up"
 Fc_tt$Change[(Fc_tt$P.value < cut_off_pvalue)&(Fc_tt$FC < 1/cut_off_FC)] <- "Down"
 aa <- Fc_tt %>% select('Compound ID','P.value','FC','Change',everything())
-write.csv(aa,"3.Statistics/FoldChange-Pvalue.csv",row.names = F)
-# 绘制火山图====================================
+write.csv(aa,"3.Statistics/Volcano.csv",row.names = F)
+#=================Volcano Plot ====================
 x1 <- log2(Fc_tt$FC)
 y1 <- -log10(Fc_tt$P.value)
 
 p <- ggplot(
-  #设置数据
   Fc_tt, 
   aes(x = x1, 
       y = y1, 
       colour=Change)) +
   geom_point(alpha=0.4, size=2.5) +
   scale_color_manual(values=c("#546de5", "#d2dae2","#ff4757"))+
-  
-  # 辅助线
+  # vline and hline
   geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
   geom_hline(yintercept = -log10(cut_off_pvalue),lty=4,col="black",lwd=0.8) +
   xlim(-5,5)+
-  # 坐标轴
+  # labs(x,y)
   labs(x="log2(Fold Change)",
        y="-log10 (P-value)")+
   theme_bw()+
-  # 图例
+  # legend
   theme(plot.title = element_text(hjust = 0.5), 
         legend.position="right", 
         legend.title = element_blank()
@@ -199,17 +194,13 @@ p
 ggsave(p,filename = "3.Statistics/Volcano.pdf",width = 12,height = 9,dpi = 300)
 ggsave(p,filename = "3.Statistics/Volcano.png",width = 12,height = 9,dpi = 300)
 
+#================= PCA analysis =================
 
-# ropls packages statistic
-
-########################################################### 
-# PCA analysis(ropls)
-###########################################################
 nor_data2 <- nor_data1[!grepl("QC|qc|Qc|qC",rownames(nor_data1)),]
 
 nor.pca <- opls(x = nor_data2)
-names(attributes(nor.pca))    #查看包含信息
-head(nor.pca@scoreMN)    #例如，提取对象得分（各样本在 PCA 轴中的排序坐标）
+names(attributes(nor.pca))  
+head(nor.pca@scoreMN)    
 # pca.scoreMN <- nor.pca@scoreMN
 # pca.scoreMN <- cbind(pca.scoreMN, nor_sample)
 
@@ -217,10 +208,10 @@ pca.scoreMN <- as.data.frame(nor.pca@scoreMN)
 pca.scoreMN$Sample <- rownames(pca.scoreMN)
 pca.scoreMN <- merge(pca.scoreMN, sample_infor[,3:4],by.x = "Sample",by.y = "Sample.analysis.name")
 head(pca.scoreMN)
+write.csv(pca.scoreMN,"3.Statistics/PCA_data.csv",row.names = F)
 
-########################################################### 
-# ggplot2 PCA analysis
-########################################################### 
+#ggplot2 PCA plot
+
 xlab <- paste0( "PC1(",round(nor.pca@modelDF$R2X[1]* 100, 2), "%)")
 ylab <- paste0( "PC2(",round(nor.pca@modelDF$R2X[2]* 100, 2), "%)")
 p1 <- ggplot(data = pca.scoreMN,aes(x=p1,y=p2,color = Group ))+
@@ -235,31 +226,28 @@ p1 <- ggplot(data = pca.scoreMN,aes(x=p1,y=p2,color = Group ))+
   theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   ggtitle("PCA")+
-  theme(plot.title = element_text(hjust = 0.5,face = "bold")) #设置标题居中
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) # title centered
 
 p1
 
 ggsave(p1,filename = "3.Statistics/PCA.pdf",width = 12,height = 9,dpi = 300)
 ggsave(p1,filename = "3.Statistics/PCA.png",width = 12,height = 9,dpi = 300)
 
-###########################################################
-## PLS-DA analysis
-###########################################################
+#============== PLS-DA analysis ==================
+
 nor.plsda <- opls(x = nor_data2, y = sample_infor[!grepl("QC|qc|Qc|qC",sample_infor$Group), 'Group'], orthoI = 0)
 names(attributes(nor.plsda))
-head(nor.plsda@scoreMN)    #例如，样本在 PLS-DA 轴上的位置
-head(nor.plsda@loadingMN)    #例如，代谢物在 PLS-DA 轴上的位置
+head(nor.plsda@scoreMN)    
+head(nor.plsda@loadingMN)    
 
 plsda.scoreMN <- as.data.frame(nor.plsda@scoreMN)
 plsda.scoreMN$Sample <- rownames(plsda.scoreMN)
 plsda.scoreMN <- merge(plsda.scoreMN, sample_infor[,3:4],by.x = "Sample",by.y = "Sample.analysis.name")
 head(plsda.scoreMN)
-#plsda.scoreMN <- cbind(plsda.scoreMN, nor_sample)
+write.csv(plsda.scoreMN,"3.Statistics/PLS-DA_data.csv",row.names = F)
 
+#ggplot2 PLS-DA plot
 
-#########################################################
-# ggplot2 PLS-DA analysis
-###########################################################
 xlab1 <- paste0( "PC1(",round(nor.plsda@modelDF$R2X[1]* 100, 2), "%)")
 ylab1 <- paste0( "PC2(",round(nor.plsda@modelDF$R2X[2]* 100, 2), "%)")
 p1 <- ggplot(data = plsda.scoreMN,aes(x=p1,y=p2,color = Group ))+
@@ -274,7 +262,7 @@ p1 <- ggplot(data = plsda.scoreMN,aes(x=p1,y=p2,color = Group ))+
   theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   ggtitle("PLS-DA") +
-  theme(plot.title = element_text(hjust = 0.5,face = "bold")) #设置标题居中
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) # title centered
 
 p1
 ggsave(p1,filename = "3.Statistics/PLS-DA.pdf",width = 12,height = 9,dpi = 300)
@@ -282,13 +270,12 @@ ggsave(p1,filename = "3.Statistics/PLS-DA.png",width = 12,height = 9,dpi = 300)
 
 #plsda.permu <- nor.plsda@suppLs$permMN # plsda permutation data
 
-###########################################################
-# OPLS-DA analysis
-###########################################################
+#================ OPLS-DA analysis ===================
+
 nor.oplsda <- opls(x = nor_data2, y = sample_infor[!grepl("QC|qc|Qc|qC",sample_infor$Group), 'Group'],predI=1,orthoI=NA,permI=200) #orthoI = NA 时执行 OPLS-DA
 names(attributes(nor.oplsda))
-head(nor.oplsda@scoreMN)    #例如，样本在 OPLS-DA 轴上的位置
-head(nor.oplsda@loadingMN)    #例如，代谢物在 OPLS-DA 轴上的位置
+head(nor.oplsda@scoreMN)      #
+head(nor.oplsda@loadingMN)    #
 
 oplsda.scoreMN <- nor.oplsda@scoreMN
 oplsda.orthoScoreMN <- nor.oplsda@orthoScoreMN
@@ -296,9 +283,9 @@ oplsda.score <- as.data.frame(cbind(nor.oplsda@scoreMN,nor.oplsda@orthoScoreMN))
 oplsda.score$Sample <- rownames(oplsda.score)
 oplsda.score <- merge(oplsda.score,sample_infor[,3:4],by.x = "Sample",by.y = "Sample.analysis.name")
 #oplsda.score <- cbind(nor.oplsda@scoreMN,nor.oplsda@orthoScoreMN, nor_sample)
+write.csv(oplsda.score,"3.Statistics/OPLS-DA_data.csv",row.names = F)
 
-
-# ggplot2 OPLS-DA analysis
+# ggplot2 OPLS-DA plot
 xlab1 <- paste0( "PC1(",round(nor.oplsda@modelDF$R2X[1]* 100, 2), "%)")
 ylab1 <- paste0( "PCo1(",round(nor.oplsda@modelDF$R2X[2]* 100, 2), "%)")
 p1 <- ggplot(data = oplsda.score,aes(x=p1,y=o1,color = Group ))+
@@ -313,57 +300,85 @@ p1 <- ggplot(data = oplsda.score,aes(x=p1,y=o1,color = Group ))+
   theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+
   ggtitle("OPLS-DA") +
-  theme(plot.title = element_text(hjust = 0.5,face = "bold")) #设置标题居中
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) # title centered
 
 p1
 ggsave(p1,filename = "3.Statistics/OPLS-DA.pdf",width = 12,height = 9,dpi = 300)
 ggsave(p1,filename = "3.Statistics/OPLS-DA.png",width = 12,height = 9,dpi = 300)
 
-###########################################################
-# OPLS-DA loading analysis
-###########################################################
-# opls.loading <- cbind(nor.oplsda@loadingMN,nor.oplsda@orthoLoadingMN)
-# opls.loading <- as.data.frame(opls.loading)
-# xlab1 <- paste0( "PC1(",round(nor.oplsda@modelDF$R2X[1]* 100, 2), "%)")
-# ylab1 <- paste0( "PCo1(",round(nor.oplsda@modelDF$R2X[2]* 100, 2), "%)")
-# p1 <- ggplot(data = opls.loading,aes(x=p1,y=o1 ))+
-#     geom_point(size=1.5,color="red") + labs(x=xlab1,y=ylab1,size=5) + guides(fill="none")+
-#   geom_hline(yintercept = 0,size=0.7)+geom_vline(xintercept = 0,size=0.7)+
-#   theme_bw() +theme(panel.grid=element_blank())+
-#   theme(panel.border = element_rect(fill=NA,color="black", size=1.1, linetype="solid"))+ # 边框线
-#   theme(legend.title = element_blank())+
-#   theme(axis.title.x = element_text(size = 12, face = "bold", vjust = 0.5, hjust = 0.5, angle = 0))+ # 横轴标签
-#   theme(axis.title.y = element_text(size = 12, face = "bold", vjust = 0.5, hjust = 0.5, angle = 90))+ # 纵轴标签
-#   theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+ # 横轴刻度
-#   theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+ # 纵轴刻度
-#   ggtitle("Loading-OPLS-DA") +
-#   theme(plot.title = element_text(hjust = 0.5,face = "bold")) #设置标题居中
-# p1
-# 
-# ggsave(p1,filename = "Loading-OPLS-DA.pdf",width = 12,height = 9,dpi = 300)
-# ggsave(p1,filename = "Loading-OPLS-DA.png",width = 12,height = 9,dpi = 300)
-# 
-# ###########################################################
-# # Permutation Test
-# ###########################################################
-# opls.permutation <- as.data.frame(nor.oplsda@suppLs$permMN)
-# png(filename = "Permutation-OPLS-DA.png")
-# permuPlot <- plot(nor.oplsda, typeVc = 'permutation')
-# dev.off()
-# 
-# write.table(opls.permutation,"OPLS-permutation.csv",sep = ",",row.names = F)
-# 
-# 
-# 
-# #VIP 值帮助寻找重要的代谢物
-# vipVn <-as.data.frame(getVipVn(nor.oplsda))
-# names(vipVn)[1] <- "VIP"
-# aa2 <- cbind(aa,vipVn)
-# aa2 <- aa2 %>% dplyr::select('Compound ID','P.value','FC','VIP','Change')
-# df <- cbind(normalize_data[-1,],aa2[,-1])
-# write.csv(df,"no-significant.csv",row.names = F)
-# 
-# 
+#=============== OPLS-DA loading analysis ==================
+
+opls.loading <- as.data.frame(cbind(nor.oplsda@loadingMN,nor.oplsda@orthoLoadingMN))
+
+#opls.loading <- as.data.frame(opls.loading)
+xlab1 <- paste0( "PC1(",round(nor.oplsda@modelDF$R2X[1]* 100, 2), "%)")
+ylab1 <- paste0( "PCo1(",round(nor.oplsda@modelDF$R2X[2]* 100, 2), "%)")
+p1 <- ggplot(data = opls.loading,aes(x=p1,y=o1 ))+
+    geom_point(size=1.5,color="red") + labs(x=xlab1,y=ylab1,size=5) + guides(fill="none")+
+  geom_hline(yintercept = 0,size=0.7)+geom_vline(xintercept = 0,size=0.7)+
+  theme_bw() +theme(panel.grid=element_blank())+
+  theme(panel.border = element_rect(fill=NA,color="black", size=1.1, linetype="solid"))+ # border lines
+  theme(legend.title = element_blank())+
+  theme(axis.title.x = element_text(size = 12, face = "bold", vjust = 0.5, hjust = 0.5, angle = 0))+ # x axis labs
+  theme(axis.title.y = element_text(size = 12, face = "bold", vjust = 0.5, hjust = 0.5, angle = 90))+ # y axis labs
+  theme(axis.text.x = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+ # x axis scale
+  theme(axis.text.y = element_text(size = 10, color = "black", face = "bold", vjust = 0.5, hjust = 0.5))+ # y axis scale
+  ggtitle("Loading-OPLS-DA") +
+  theme(plot.title = element_text(hjust = 0.5,face = "bold")) # title centered
+p1
+
+ggsave(p1,filename = "3.Statistics/Loading-OPLS-DA.pdf",width = 12,height = 9,dpi = 300)
+ggsave(p1,filename = "3.Statistics/Loading-OPLS-DA.png",width = 12,height = 9,dpi = 300)
+
+#============= Permutation Test Analysis ==================
+
+opls.permutation <- as.data.frame(nor.oplsda@suppLs$permMN)
+png(filename = "3.Statistics/Permutation-OPLS-DA.png")
+permuPlot <- plot(nor.oplsda, typeVc = 'permutation')
+dev.off()
+
+write.table(opls.permutation,"3.Statistics/OPLS-Permutation.csv",sep = ",",row.names = F)
+
+#====================== Statistics END ====================
+
+#===================== VIP data ===========================
+vipVn <-data.frame(VIP=getVipVn(nor.oplsda)) # from OPLS-DA analysis
+
+vip_all <- cbind(aa,vipVn)
+vip_all <- vip_all %>% dplyr::select('Compound ID','P.value','FC','VIP','Change')
+
+No_QC_data <- normalize_data[,!grepl("QC|qc|Qc|qC",colnames(normalize_data))]
+df_vip_all <- merge(No_QC_data[-1,],vip_all,by = "Compound ID")
+write.csv(df_vip_all,"3.Statistics/No-Significant.csv",row.names = F)
+
+#==================== Significance Analysis ===============
+cut_off_vip <- 1
+sig_data <- subset(df_vip_all,VIP>cut_off_vip & P.value<cut_off_pvalue & (FC>cut_off_FC | FC<1/cut_off_FC))
+write.csv(sig_data,"4.SignificanceAnalysis/Significant.csv",row.names = F)
+
+
+data_heat <- RawFilter[-1,-1]
+rownames(sample_infor) <- sample_infor$Sample.analysis.name
+Group <-data.frame(class= sample_infor[,4])
+rownames(Group) <- rownames(sample_infor)
+####
+sig_data_order <- sig_data[order(sig_data[,'VIP'],decreasing = T),] # data order by "VIP"
+sig_data2 <- sig_data_order[,!grepl("P.value|FC|VIP|Change",colnames(sig_data_order))]
+write.csv(sig_data2,"4.SignificanceAnalysis/heatmap.csv",row.names = F)
+df_heat2 <- as.data.frame(lapply(sig_data2[,-1],as.numeric)) # convert to numeric 
+df_heat_50 <- df_heat2[1:50,]                               # TOP 50 significant metabolites
+sig_group <- data.frame(class=Group$class,sample=rownames(Group))
+sig_group <- sig_group[!grepl("QC|qc|Qc|qC",sig_group$class),]
+sig_grp <- data.frame(class=sig_group[,'class'])
+rownames(sig_grp) <- sig_group$sample 
+
+p2 <- pheatmap(df_heat_50,scale = "row", cluster_cols = T,show_rownames = F,cluster_rows = T,annotation_col = sig_grp,legend_labels = NA,
+               show_colnames=T,col=colorRampPalette(c("navy", "white", "firebrick3"))(50),treeheight_row = 30, treeheight_col = 30)
+p2
+ggsave(p2,filename = "4.SignificanceAnalysis/heatmap-top50.pdf",width = 12,height = 9,dpi = 300)
+ggsave(p2,filename = "4.SignificanceAnalysis/heatmap-top50.png",width = 12,height = 9,dpi = 300)
+
+
 # ###########################################################
 # #Step 2 Function analysis
 # ##########################################################
